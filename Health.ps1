@@ -176,7 +176,7 @@ if (-not $startup) {
     if (Test-Path -LiteralPath $lnk) {
         Line ok "startup shortcut in place" "The restore screen appears automatically at Windows startup."
     } else {
-        Line warn "startup shortcut missing" "No automatic screen; 'cc-back' still works. Install.ps1 puts it back."
+        Line warn "startup shortcut missing" "No automatic screen; the restore command still works. Install.ps1 puts it back."
     }
 }
 
@@ -190,11 +190,24 @@ $profiles  = @(
     }
 ) | Where-Object { $_ } | Select-Object -Unique
 
-$withBlock = @($profiles | Where-Object {
-    (Test-Path -LiteralPath $_) -and ([IO.File]::ReadAllText($_, [Text.Encoding]::UTF8) -match '>>> ClaudeSessionRecovery >>>')
-})
+$blockHead = '# >>> ClaudeSessionRecovery >>>'
+$blockTail = '# <<< ClaudeSessionRecovery <<<'
+$withBlock = @()
+$defined   = @()
+foreach ($p in $profiles) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    $text = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8)
+    $m = [regex]::Match($text, "(?s)$([regex]::Escape($blockHead))(.*?)$([regex]::Escape($blockTail))")
+    if (-not $m.Success) { continue }
+    $withBlock += $p
+    # Read the names out of the block rather than assuming them: Install.ps1 -Prefix can
+    # change all four.
+    foreach ($fn in [regex]::Matches($m.Groups[1].Value, '(?m)^\s*function\s+(\S+)')) {
+        if ($defined -notcontains $fn.Groups[1].Value) { $defined += $fn.Groups[1].Value }
+    }
+}
 if ($withBlock.Count -gt 0) {
-    Line ok "commands defined in $($withBlock.Count) profile(s)" "cc  |  cc-tab  |  cc-back  |  cc-health"
+    Line ok "commands defined in $($withBlock.Count) profile(s)" ($defined -join '  |  ')
 } else {
     Line fail "no command block in any profile" "Run Install.ps1 again."
 }

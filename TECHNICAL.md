@@ -126,6 +126,27 @@ Omitting the duration means "repeat indefinitely". `Register-ScheduledTask` can 
 non-terminating error that never reaches `catch`, so registration is **verified** with
 `Get-ScheduledTask` before success is reported.
 
+## The smoke test
+
+`Test.ps1` builds a throwaway `HOME` under `%TEMP%` — one per scenario, so nothing leaks
+between tests — copies the five runtime scripts out of the repo and fabricates evidence in each
+layer. `$HOME` is resolved when a process starts, so the environment variables are set *before*
+each child PowerShell is launched; setting them inside an already-running process has no effect
+on it. Everything it creates it removes again, file by file, unless you pass `-Keep`.
+
+What it pins down:
+
+| Test | Why it is there |
+|---|---|
+| Four layers each contribute one candidate | The merge works and nothing is double-counted |
+| A heartbeat with no `.closed` reads as a hard crash | The shutdown-kind distinction |
+| Tombstone newer than the transcript suppresses it | The `/exit` contract |
+| Tombstone older than the transcript does not | Working in the folder again re-enables it |
+| A running session is excluded | Liveness via `pid` + process start time |
+| Provider-qualified and plain paths merge into one | Regression: the UNC bug that opened the same network folder twice |
+| Snapshot records only the live session | Dead registry entries are not carried forward |
+| A snapshot from an older boot is preserved | Rotation, so two restarts in a row do not destroy the evidence |
+
 ## Diagnostics
 
 ```powershell

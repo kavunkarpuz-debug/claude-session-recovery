@@ -1,7 +1,30 @@
 # Install.ps1 - Run once. Running it again is harmless (it overwrites).
 #   powershell -ExecutionPolicy Bypass -File .\Install.ps1
+#   .\Install.ps1 -Prefix ccode    use different command names
+#   .\Install.ps1 -Force           install even though a name collides with something
+
+[CmdletBinding()]
+param(
+    # The command names are built from this:
+    #   <prefix>  <prefix>-tab  <prefix>-back  <prefix>-health
+    [ValidatePattern('^[A-Za-z][A-Za-z0-9]*$')]
+    [string]$Prefix = 'cc',
+
+    [switch]$Force
+)
 
 $source = $PSScriptRoot
+
+# ---------------------------------------------------------------- prerequisites
+# Not fatal: you may be installing before Claude Code, or onto a machine where it
+# lands on PATH later. But say it now rather than let 'cc' fail mysteriously.
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Write-Host ""
+    Write-Host "WARNING: claude.exe is not on PATH." -ForegroundColor Yellow
+    Write-Host "         Install Claude Code first, or the commands below will not start anything." -ForegroundColor Yellow
+    Write-Host "         https://claude.com/claude-code" -ForegroundColor Yellow
+    Write-Host ""
+}
 
 # The working copy lives under .claude: the "do not touch" rule lands in one place, and
 # state\ - written every 10 minutes - does not generate cloud-sync traffic.
@@ -54,14 +77,43 @@ foreach ($f in 'Start.ps1', 'Restore.ps1', 'Snapshot.ps1', 'NewTab.ps1', 'Health
 Write-Host "[1/4] Scripts copied: $target" -ForegroundColor Green
 
 # 2. Add the commands to the PowerShell profile
-$block = @"
-$blockHead
-function cc        { & "$target\Start.ps1" @args }
-function cc-tab    { & "$target\NewTab.ps1" @args }
-function cc-back   { & "$target\Restore.ps1" -Mode Manual @args }
-function cc-health { & "$target\Health.ps1" @args }
-$blockTail
-"@
+#    Names come from -Prefix so they can be changed if 'cc' is taken (it is a C compiler on
+#    machines with a Unix toolchain, and PowerShell resolves Function before Application -
+#    our function would silently shadow it).
+$commands = [ordered]@{
+    "$Prefix"        = @('Start.ps1',   '')
+    "$Prefix-tab"    = @('NewTab.ps1',  '')
+    "$Prefix-back"   = @('Restore.ps1', ' -Mode Manual')
+    "$Prefix-health" = @('Health.ps1',  '')
+}
+
+$clash = @()
+foreach ($name in $commands.Keys) {
+    $existing = Get-Command $name -ErrorAction SilentlyContinue
+    # A Function by that name is almost certainly our own block from a previous install.
+    if ($existing -and $existing.CommandType -ne 'Function') {
+        $clash += "$name -> $($existing.CommandType) $($existing.Source)"
+    }
+}
+if ($clash.Count -gt 0 -and -not $Force) {
+    Write-Host ""
+    Write-Host "STOPPED: these command names are already taken:" -ForegroundColor Red
+    foreach ($c in $clash) { Write-Host "  $c" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "  Defining them would shadow the existing commands. Pick another prefix:" -ForegroundColor Yellow
+    Write-Host "    .\Install.ps1 -Prefix ccode" -ForegroundColor Yellow
+    Write-Host "  Or override deliberately:  .\Install.ps1 -Force" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Nothing was written to any profile. The scripts are in place at:" -ForegroundColor DarkGray
+    Write-Host "  $target" -ForegroundColor DarkGray
+    return
+}
+
+$pad   = ($commands.Keys | Measure-Object -Property Length -Maximum).Maximum
+$lines = foreach ($name in $commands.Keys) {
+    'function {0} {{ & "{1}\{2}"{3} @args }}' -f $name.PadRight($pad), $target, $commands[$name][0], $commands[$name][1]
+}
+$block = (@($blockHead) + $lines + @($blockTail)) -join "`r`n"
 
 foreach ($p in $profiles) {
     $dir = Split-Path -Parent $p
@@ -93,7 +145,7 @@ foreach ($p in $profiles) {
     [IO.File]::WriteAllText($p, ($content.TrimEnd() + "`r`n`r`n" + $block + "`r`n"), (New-Object Text.UTF8Encoding($true)))
     Write-Host "      profile updated: $p" -ForegroundColor DarkGray
 }
-Write-Host "[2/4] Commands added: cc, cc-tab, cc-back, cc-health" -ForegroundColor Green
+Write-Host "[2/4] Commands added: $(($commands.Keys) -join ', ')" -ForegroundColor Green
 
 # 3. Run Restore.ps1 (Auto mode) at Windows startup
 if ($startup) {
@@ -205,11 +257,16 @@ if ($policy -in 'Restricted', 'AllSigned') {
     Write-Host "If company policy blocks it you will get an error; then you need your IT team." -ForegroundColor Yellow
 }
 
+# ---- Prove it works rather than assume it: run the health check and show the result ----
 Write-Host ""
+Write-Host "Verifying the installation..." -ForegroundColor Cyan
+& (Join-Path $target 'Health.ps1')
+
 Write-Host "Done. Open a new PowerShell window." -ForegroundColor Cyan
-Write-Host "  cc        -> start Claude in the current folder, with recording" -ForegroundColor Cyan
-Write-Host "  cc-tab    -> open another folder as a tab in the SAME window" -ForegroundColor Cyan
-Write-Host "  cc-back   -> list lost sessions and bring them back" -ForegroundColor Cyan
-Write-Host "  cc-health -> check that the system is still working" -ForegroundColor Cyan
+$pad2 = ($commands.Keys | Measure-Object -Property Length -Maximum).Maximum
+Write-Host ("  {0} -> start Claude in the current folder, with recording" -f "$Prefix".PadRight($pad2))        -ForegroundColor Cyan
+Write-Host ("  {0} -> open another folder as a tab in the SAME window"    -f "$Prefix-tab".PadRight($pad2))    -ForegroundColor Cyan
+Write-Host ("  {0} -> list lost sessions and bring them back"             -f "$Prefix-back".PadRight($pad2))   -ForegroundColor Cyan
+Write-Host ("  {0} -> check that the system is still working"             -f "$Prefix-health".PadRight($pad2)) -ForegroundColor Cyan
 Write-Host ""
 Write-Host "To remove: .\Uninstall.ps1" -ForegroundColor DarkGray

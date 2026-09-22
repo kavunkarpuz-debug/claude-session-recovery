@@ -23,7 +23,16 @@ powershell -ExecutionPolicy Bypass -File .\Install.ps1
 
 It does four things: copies the scripts to `~\.claude\session-recovery\`, adds the commands to
 your PowerShell profile, creates a startup shortcut, and registers a scheduled task that runs
-every 10 minutes. No administrator rights needed. Running it again is harmless.
+every 10 minutes. No administrator rights needed. Running it again is harmless. When it is
+done it runs the health check and shows you the result, so you see it working rather than
+being told it worked.
+
+If `cc` is already taken on your machine — it is a C compiler wherever a Unix toolchain is
+installed — the installer stops and names the conflict instead of shadowing it. Pick your own:
+
+```powershell
+.\Install.ps1 -Prefix ccode      # ccode, ccode-tab, ccode-back, ccode-health
+```
 
 ## Commands
 
@@ -33,6 +42,8 @@ every 10 minutes. No administrator rights needed. Running it again is harmless.
 | `cc-tab "<path>"` | Opens another folder as a new tab in the same Windows Terminal window |
 | `cc-back` | Lists closed sessions and reopens the ones you pick |
 | `cc-health` | Checks, line by line, that the system still works |
+
+(These are the default names; `-Prefix` at install time changes all four.)
 
 At Windows startup the restore screen appears **automatically**; if there are no candidates it
 never shows up at all.
@@ -103,6 +114,17 @@ your conversation history.**
 
 Claude Code's internal file formats were verified on release **2.1.278**. Whether they still
 hold on a newer release is exactly what `cc-health` tells you.
+
+## Tests
+
+```powershell
+.\Test.ps1
+```
+
+Builds a throwaway `HOME` under `%TEMP%`, fabricates evidence in all four layers and checks
+what the restore engine makes of it — including the `/exit` tombstone and the path-canonical
+regression that once opened the same network folder twice. Your real installation is never
+touched. Run it after changing anything here.
 
 ## Details
 
