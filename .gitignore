@@ -1,0 +1,16 @@
+# Calisma zamani durumu - makineye ozel, repoya girmez
+durum/
+*.log
+
+# Gizli bilgi (global kural)
+*.env
+.env*
+*credentials*
+*secrets*
+*-key*
+.claude/settings.local.json
+
+# Windows / OneDrive artiklari
+Thumbs.db
+desktop.ini
+*.claudeoturum-yedek
