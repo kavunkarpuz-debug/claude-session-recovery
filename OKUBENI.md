@@ -1,21 +1,10 @@
-# Claude Oturum Kurtarma (v2)
+# Teknik Notlar
 
-Bilgisayar aniden kapandığında (elektrik, mavi ekran, Windows Update, uykudan kapanma)
-açık olan Claude oturumlarını, tekrar açıldığında tek ekrandan geri getirir.
-
-## Kullanım
-
-| Komut | Ne yapar |
-|---|---|
-| `cc` | Bulunduğun klasörde Claude'u başlatır ve oturumu kaydeder |
-| `cc-tab "C:\yol\klasör"` | O klasörü **aynı Windows Terminal penceresinde yeni sekme** olarak açar |
-| `cc-geri` | İstediğin an, son 12 saatte çalışılmış ama şu an açık olmayan oturumları listeler |
-| — | Windows açılışında ekran **otomatik** gelir; aday yoksa hiç görünmez |
+Sistemin iç işleyişi, bilinen sınırları ve geliştirirken düşülen tuzaklar.
+Ne olduğu, kurulumu ve komutları için [`README.md`](README.md).
 
 Geri yükleme ekranında: `Enter` = işaretlilerin hepsini aç, `1 3 5` = işareti değiştir,
 `h` = hepsi, `y` = hiçbiri, `q` = vazgeç (kayıtlar korunur, sonra `cc-geri` ile tekrar bakabilirsin).
-
-Kurulum/güncelleme: `powershell -ExecutionPolicy Bypass -File .\Kurulum.ps1` (tekrar çalıştırmak zararsız).
 
 ### `cc-tab` nasıl çalışıyor
 
