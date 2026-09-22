@@ -78,6 +78,19 @@ quietly weakens. `Health.ps1` exists to make that visible: it does not stop at c
 numbers, it opens the real files and confirms **the fields are still there**. A differing
 version is only a warning; the verdict comes from the structure checks.
 
+The restore engine no longer only *reports* this after the fact. Each layer counts how many
+usable records it got out of the files it found; if a layer has input files but produces
+nothing, `Restore.ps1` says so — on the selection screen, in the "no sessions to bring back"
+message, and in the log. The distinction that matters is between *no files* (normal: nothing
+was open) and *files it cannot read* (a format change). Auto mode, which is normally invisible
+when there is nothing to restore, opens the screen anyway when a layer is unreadable — otherwise
+the failure would repeat unseen across reboots.
+
+The snapshot file carries a `schema` number. A snapshot written by a newer build is still read,
+because the fields may well be compatible, but the mismatch is reported instead of being
+silently half-understood. Without the stamp, a future format change would read as "zero
+sessions", which is indistinguishable from losing them.
+
 The transcript scan skips the metadata lines at the top of the file (`mode`, `permission-mode`
 and friends) when looking for the first `cwd`, and reads at most 200 lines — these files can run
 to hundreds of megabytes.
@@ -164,8 +177,12 @@ What it pins down:
 | Tombstone newer than the transcript suppresses it | The `/exit` contract |
 | Tombstone older than the transcript does not | Working in the folder again re-enables it |
 | A running session is excluded | Liveness via `pid` + process start time |
+| A live `pid` with a different start time counts as dead | PID reuse after a reboot — the case where checking the PID alone would drop a session |
 | Provider-qualified and plain paths merge into one | Regression: the UNC bug that opened the same network folder twice |
-| Snapshot records only the live session | Dead registry entries are not carried forward |
+| A record from after this boot is listed, but excluded by `-PreviousBoot` | The boot filter that separates "open at shutdown" from "worked on since" |
+| Registry files with no `cwd` raise a warning and zero candidates | Silent decay: a broken layer must announce itself |
+| A snapshot from a newer schema is still read, and reported | Forward compatibility without pretending to understand it |
+| Snapshot records only the live session, and carries a schema stamp | Dead registry entries are not carried forward |
 | A snapshot from an older boot is preserved | Rotation, so two restarts in a row do not destroy the evidence |
 
 ## Diagnostics

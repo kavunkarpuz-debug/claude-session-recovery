@@ -12,6 +12,11 @@
 #   snapshot left by the previous boot; it first preserves it as 'snapshot-previous.json'.
 #   Whatever order they run in, the evidence survives.
 
+# Format version of the file this script writes. Restore.ps1 and Health.ps1 compare against
+# it, so a future change is reported as "I do not understand this file" instead of being read
+# as "nothing was open" - which is the same thing as losing your sessions, only quieter.
+$SnapshotSchema = 1
+
 $state    = Join-Path $PSScriptRoot 'state'
 $registry = Join-Path $HOME '.claude\sessions'
 $current  = Join-Path $state 'snapshot.json'
@@ -75,6 +80,7 @@ if (Test-Path -LiteralPath $registry) {
 }
 
 $out = [ordered]@{
+    schema   = $SnapshotSchema
     time     = (Get-Date).ToUniversalTime().ToString('o')
     boot     = $bootUtc
     sessions = @($list)

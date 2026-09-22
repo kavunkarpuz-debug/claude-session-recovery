@@ -59,12 +59,14 @@ function WorkFolder($e, $name) {
 
 $deadPid = 999999   # a process id that does not exist
 
-function WriteSnapshot($e, $entries, $file) {
-    @{
+function WriteSnapshot($e, $entries, $file, $schema) {
+    $o = [ordered]@{
         time     = (Get-Date).ToUniversalTime().AddHours(-2).ToString('o')
         boot     = (Get-Date).ToUniversalTime().AddDays(-1).ToString('o')
         sessions = @($entries)
-    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $e.State $file) -Encoding UTF8
+    }
+    if ($schema) { $o.Insert(0, 'schema', $schema) }
+    $o | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $e.State $file) -Encoding UTF8
 }
 
 function WriteRegistry($e, $path, $sessionId, $processId, $procStart) {
@@ -109,17 +111,25 @@ function WriteTombstone($e, $path, $hoursOffset) {
 
 # Runs Restore.ps1 in read-only List mode against the fake HOME and returns its output.
 # $HOME is resolved when a process STARTS, so the environment has to be set before launching.
-function RunRestore($e) {
+function RunRestore($e, $extra) {
     $env:USERPROFILE = $e.Home
     $env:HOMEDRIVE   = ''
     $env:HOMEPATH    = ''
     $env:HOME        = $e.Home
+    $argv = @('-Mode', 'List', '-Hours', '24')
+    if ($extra) { $argv += $extra }
     return (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $e.Inst 'Restore.ps1') `
-                -Mode List -Hours 24 2>&1 | ForEach-Object { $_.ToString() })
+                @argv 2>&1 | ForEach-Object { $_.ToString() })
 }
 
 function CandidateCount($out) {
     $m = [regex]::Match(($out -join "`n"), 'candidates=(\d+)')
+    if ($m.Success) { return [int]$m.Groups[1].Value }
+    return -1
+}
+
+function WarningCount($out) {
+    $m = [regex]::Match(($out -join "`n"), 'warnings=(\d+)')
     if ($m.Success) { return [int]$m.Groups[1].Value }
     return -1
 }
@@ -172,6 +182,42 @@ try {
     WriteRegistry $e3 $fd 'eeee5555' 23456 '1'
     Check 'provider-qualified and plain paths merge into one' 1 (CandidateCount (RunRestore $e3))
 
+    # -------------------------------------------------------------------------- PID reuse
+    # After a reboot the OS hands the same PID to something else. Checking the PID alone would
+    # then read a dead session as alive and quietly drop it from the list, which is the worst
+    # possible failure here. Liveness is pid AND process start time.
+    $eP = NewEnv 'pidreuse'
+    $fP = WorkFolder $eP 'ReusedPid'
+    WriteRegistry $eP $fP 'aaaa8888' $me.Id '1'     # PID is alive, but it is a different process
+    Check 'pid alive with a different start time counts as dead' 1 (CandidateCount (RunRestore $eP))
+
+    # ------------------------------------------------------- the previous-boot filter
+    $eB = NewEnv 'bootfilter'
+    $fB = WorkFolder $eB 'AfterBoot'
+    WriteHeartbeat $eB $fB 0                        # stamped now, i.e. after this boot
+    Check 'a record from after this boot is listed normally' 1 (CandidateCount (RunRestore $eB))
+    Check 'a record from after this boot is excluded by -PreviousBoot' 0 `
+          (CandidateCount (RunRestore $eB '-PreviousBoot'))
+
+    # ------------------------------------------- a source layer that goes quiet must say so
+    # This is the silent-decay case: files are present, but the format is not understood.
+    # Returning "no candidates" without a word is indistinguishable from "nothing was open".
+    $eW = NewEnv 'brokenlayer'
+    @{ pid = 4242; sessionId = 'nocwd'; somethingElse = 1 } | ConvertTo-Json |
+        Set-Content -LiteralPath (Join-Path $eW.Registry '4242.json') -Encoding UTF8
+    $outW = RunRestore $eW
+    Check 'registry files with no cwd raise a warning' $true ((WarningCount $outW) -ge 1)
+    Check 'and still report zero candidates'           0     (CandidateCount $outW)
+
+    # ------------------------------------------------------------ snapshot schema stamp
+    $eS = NewEnv 'schema'
+    $fS = WorkFolder $eS 'FutureSchema'
+    WriteSnapshot $eS @(@{ path = $fS; sessionId = 'bbbb9999'; pid = $deadPid; procStart = '1' }) `
+                  'snapshot-previous.json' 99
+    $outS = RunRestore $eS
+    Check 'a snapshot from a newer schema is still read' 1     (CandidateCount $outS)
+    Check 'a snapshot from a newer schema is reported'   $true ((WarningCount $outS) -ge 1)
+
     # ------------------------------------------------------------------ Snapshot.ps1 itself
     $e4 = NewEnv 'snapshot'
     $fs = WorkFolder $e4 'Recorded'
@@ -184,6 +230,7 @@ try {
     $snapFile = Join-Path $e4.State 'snapshot.json'
     $snap     = Get-Content -LiteralPath $snapFile -Raw -Encoding UTF8 | ConvertFrom-Json
     Check 'snapshot records only the live session' 1 @($snap.sessions).Count
+    Check 'snapshot carries a schema stamp' $true ($null -ne $snap.PSObject.Properties['schema'])
 
     # Rotation: a snapshot from a different boot must be preserved, not overwritten
     $snap.boot = 'a-different-boot'

@@ -44,6 +44,18 @@ $registry = Join-Path $HOME '.claude\sessions'
 $snapNow  = Join-Path $state 'snapshot.json'
 $snapPrev = Join-Path $state 'snapshot-previous.json'
 
+# Snapshot format this build understands (Snapshot.ps1 stamps what it writes).
+$KnownSchema = 1
+
+# A source layer that has input files but yields nothing usable is the dangerous case: the
+# format changed and we would otherwise report "no sessions to bring back", which looks exactly
+# like "nothing was open". Anything collected here is logged and shown to you.
+$script:layerWarnings = @()
+function Warn($m) {
+    $script:layerWarnings += $m
+    Log "LAYER WARNING: $m"
+}
+
 function Log($m) {
     try { Add-Content -LiteralPath $log -Value ("{0:yyyy-MM-dd HH:mm:ss}  [{1}] {2}" -f (Get-Date), $Mode, $m) } catch { }
 }
@@ -118,17 +130,37 @@ function CollectCandidates($thisBootUtc, $limitUtc, $previousBootOnly) {
     # Without this, source 0 (the snapshot) would keep offering a session that has already
     # been reopened - its new pid does not match the one in the old snapshot, so it looks dead.
     if (Test-Path -LiteralPath $registry) {
-        foreach ($d in Get-ChildItem -LiteralPath $registry -Filter *.json -File -ErrorAction SilentlyContinue) {
+        $registryFiles  = @(Get-ChildItem -LiteralPath $registry -Filter *.json -File -ErrorAction SilentlyContinue)
+        $registryUsable = 0
+        foreach ($d in $registryFiles) {
             try { $r = Get-Content -LiteralPath $d.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
+            if ($r.cwd) { $registryUsable++ }
             if ($r.cwd -and (ProcessAlive $r.pid $r.procStart)) { [void]$live.Add((Key $r.cwd)) }
+        }
+        if ($registryFiles.Count -gt 0 -and $registryUsable -eq 0) {
+            Warn ("layer 1: {0} session registry file(s) present, none carry a 'cwd' - Claude Code's format may have changed" -f $registryFiles.Count)
         }
     }
 
     # 0) Snapshot: the last known state before shutdown. NOT subject to the time window.
     foreach ($file in @($snapPrev, $snapNow)) {
         if (-not (Test-Path -LiteralPath $file)) { continue }
-        try { $snap = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
-        if (-not $snap.sessions) { continue }
+        $snap = $null
+        try { $snap = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        if (-not $snap) {
+            Warn ("layer 0: {0} exists but could not be parsed" -f (Split-Path -Leaf $file))
+            continue
+        }
+        # A file from a newer build is still read - the fields may well be compatible - but it
+        # is reported, so a format change never passes for "nothing was open".
+        if ($snap.schema -and [int]$snap.schema -gt $KnownSchema) {
+            Warn ("layer 0: {0} is schema {1}; this build understands {2}" -f (Split-Path -Leaf $file), $snap.schema, $KnownSchema)
+        }
+        # An EMPTY sessions list is normal (nothing was open). A MISSING one is a format change.
+        if (-not $snap.PSObject.Properties['sessions']) {
+            Warn ("layer 0: {0} has no 'sessions' field - format changed?" -f (Split-Path -Leaf $file))
+            continue
+        }
         # A snapshot from THIS boot cannot supply candidates in "previous boot" mode
         if ($previousBootOnly -and $snap.boot -eq $thisBootUtc.ToString('o')) { continue }
 
@@ -192,11 +224,14 @@ function CollectCandidates($thisBootUtc, $limitUtc, $previousBootOnly) {
 
     # 2) state records
     if (Test-Path -LiteralPath $state) {
-        foreach ($j in Get-ChildItem -LiteralPath $state -Filter *.json -ErrorAction SilentlyContinue |
-                       Where-Object { $_.Name -notlike 'snapshot*' }) {
+        $stateFiles  = @(Get-ChildItem -LiteralPath $state -Filter *.json -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Name -notlike 'snapshot*' })
+        $stateUsable = 0
+        foreach ($j in $stateFiles) {
             $base = Join-Path $state $j.BaseName
             try { $r = Get-Content -LiteralPath $j.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
             if (-not $r.path) { continue }
+            $stateUsable++
 
             $closed = ReadStamp "$base.closed"
             $when   = @($closed, (ReadStamp "$base.hb")) | Where-Object { $_ } | Sort-Object -Descending | Select-Object -First 1
@@ -233,10 +268,14 @@ function CollectCandidates($thisBootUtc, $limitUtc, $previousBootOnly) {
                 Kind      = $kind
             }
         }
+        if ($stateFiles.Count -gt 0 -and $stateUsable -eq 0) {
+            Warn ("layer 2: {0} heartbeat record(s) present, none carry a 'path'" -f $stateFiles.Count)
+        }
     }
 
     # 3) transcript scan (last resort)
     if (Test-Path -LiteralPath $projects) {
+        $transcriptUsable = 0
         $files = Get-ChildItem -LiteralPath $projects -Directory -ErrorAction SilentlyContinue |
                  ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Filter *.jsonl -File -ErrorAction SilentlyContinue } |
                  Where-Object {
@@ -247,6 +286,7 @@ function CollectCandidates($thisBootUtc, $limitUtc, $previousBootOnly) {
 
         foreach ($d in $files) {
             $path = CleanPath (ReadCwd $d.FullName)
+            if ($path) { $transcriptUsable++ }
             if (-not $path -or -not (Test-Path -LiteralPath $path)) { continue }
             $k = Key $path
             if ($live.Contains($k)) { continue }
@@ -270,6 +310,9 @@ function CollectCandidates($thisBootUtc, $limitUtc, $previousBootOnly) {
                 SessionId = $d.BaseName
                 Kind      = 'transcript'
             }
+        }
+        if (@($files).Count -gt 0 -and $transcriptUsable -eq 0) {
+            Warn ("layer 3: {0} transcript(s) in range, none carry a 'cwd' - format may have changed" -f @($files).Count)
         }
     }
 
@@ -355,6 +398,12 @@ function SelectionScreen($candidates, $subtitle) {
         Write-Host "  CLAUDE SESSION RECOVERY" -ForegroundColor Cyan
         Write-Host "  $subtitle" -ForegroundColor DarkGray
         Write-Host ""
+        # A broken source layer is shown right here, where you would otherwise just see a
+        # shorter list and assume that was all there was.
+        foreach ($w in $script:layerWarnings) {
+            Write-Host "  ! $w" -ForegroundColor Yellow
+        }
+        if ($script:layerWarnings.Count -gt 0) { Write-Host "" }
         for ($i = 0; $i -lt $candidates.Count; $i++) {
             $c      = $candidates[$i]
             $tick   = $(if ($checked.Contains($i)) { 'x' } else { ' ' })
@@ -417,7 +466,8 @@ try {
     # Read-only test mode: opens nothing, deletes no records
     if ($Mode -eq 'List') {
         Write-Host "boot(UTC)=$($bootUtc.ToString('o'))  limit(UTC)=$($limit.ToString('o'))  previousBootFilter=$previousMode"
-        Write-Host "candidates=$($candidates.Count)  stale-records-to-clean=$($found.Stale.Count)"
+        Write-Host "candidates=$($candidates.Count)  stale-records-to-clean=$($found.Stale.Count)  warnings=$($script:layerWarnings.Count)"
+        foreach ($w in $script:layerWarnings) { Write-Host "  ! $w" -ForegroundColor Yellow }
         $candidates | Select-Object @{n = 'When'; e = { $_.When.ToLocalTime().ToString('yyyy-MM-dd HH:mm') } }, Kind,
                                     @{n = 'Session'; e = { if ($_.SessionId) { $_.SessionId.Substring(0, 8) } else { '-' } } },
                                     Name, Path | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
@@ -427,12 +477,30 @@ try {
     if ($candidates.Count -eq 0) {
         Log "No candidates."
         CleanupStale $found.Stale
+        # Auto mode normally stays invisible when there is nothing to restore. But if a source
+        # layer could not be read, "nothing to restore" may be a lie - so surface it instead of
+        # letting the system rot silently across reboots.
+        if ($Mode -eq 'Auto' -and $script:layerWarnings.Count -gt 0) {
+            Log "No candidates, but $($script:layerWarnings.Count) layer warning(s) - opening the screen to report them."
+            Start-Process powershell -ArgumentList @(
+                '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Mode', 'Ask', '-Hours', $Hours
+            )
+            return
+        }
         if ($Mode -ne 'Auto') {
             Write-Host ""
             Write-Host "  No sessions to bring back." -ForegroundColor Yellow
             Write-Host "  (scanned the last $Hours hours)" -ForegroundColor DarkGray
+            # This is the exact spot where a format change used to be indistinguishable from
+            # "nothing was open". Say which layer went quiet.
+            if ($script:layerWarnings.Count -gt 0) {
+                Write-Host ""
+                Write-Host "  But a source layer could not be read - this may not be the whole truth:" -ForegroundColor Yellow
+                foreach ($w in $script:layerWarnings) { Write-Host "    ! $w" -ForegroundColor Yellow }
+                Write-Host "    Run the health check for detail." -ForegroundColor DarkGray
+            }
             Write-Host ""
-            Start-Sleep -Seconds 4
+            Start-Sleep -Seconds $(if ($script:layerWarnings.Count -gt 0) { 10 } else { 4 })
         }
         return
     }

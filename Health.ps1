@@ -16,6 +16,9 @@ param()
 # a problem in itself; if the STRUCTURE checks below pass, the system works.
 $VerifiedVersion = '2.1.278'
 
+# Snapshot format this build understands; Snapshot.ps1 stamps what it writes.
+$KnownSnapshotSchema = 1
+
 $installed = Join-Path $HOME '.claude\session-recovery'
 $state     = Join-Path $installed 'state'
 $registry  = Join-Path $HOME '.claude\sessions'
@@ -66,6 +69,12 @@ if (-not (Test-Path -LiteralPath $snapshot)) {
         $s     = Get-Content -LiteralPath $snapshot -Raw -Encoding UTF8 | ConvertFrom-Json
         $age   = ((Get-Date).ToUniversalTime() - [datetime]::Parse($s.time).ToUniversalTime()).TotalMinutes
         $count = @($s.sessions).Count
+        # Schema stamp: a file written by a newer build should be reported, not read as "empty".
+        if (-not $s.PSObject.Properties['schema']) {
+            Line warn "layer 0 - snapshot has no schema stamp" "Written by an older build. It still reads; the next refresh adds the stamp."
+        } elseif ([int]$s.schema -gt $KnownSnapshotSchema) {
+            Line fail "layer 0 - snapshot schema $($s.schema), this build understands $KnownSnapshotSchema" "The snapshot was written by a newer version of these scripts. Update them."
+        }
         if ($age -gt 25) {
             Line fail "layer 0 - snapshot is stale ($([int]$age) min old)" "It should refresh every 10 min. The scheduled task is not running; you will lose sessions on a clean restart."
         } elseif ($count -eq 0) {
