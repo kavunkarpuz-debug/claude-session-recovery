@@ -16,7 +16,7 @@ This system records what was open at the moment of shutdown and brings it all ba
 ## Install
 
 ```powershell
-git clone https://github.com/<user>/claude-session-recovery.git
+git clone https://github.com/kavunkarpuz-debug/claude-session-recovery.git
 cd claude-session-recovery
 powershell -ExecutionPolicy Bypass -File .\Install.ps1
 ```
