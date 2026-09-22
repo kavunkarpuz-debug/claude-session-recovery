@@ -1,116 +1,116 @@
-# Claude Oturum Kurtarma
+# Claude Session Recovery
 
-Bilgisayar aniden kapandığında açık olan [Claude Code](https://claude.com/claude-code)
-oturumlarını, tekrar açıldığında tek ekrandan geri getirir. Windows + PowerShell.
+Brings back the [Claude Code](https://claude.com/claude-code) sessions that were open when
+your computer died, from a single screen the next time it boots. Windows + PowerShell.
 
-## Çözdüğü problem
+## The problem it solves
 
-Aynı anda 8-10 Claude oturumunu farklı klasörlerde açık tutuyorsan — bazıları haftalarca
-dokunulmadan — elektrik kesintisi, mavi ekran veya Windows Update restart'ı hepsini birden
-götürür. Geri açmak için hangi klasörlerde çalıştığını hatırlaman gerekir; hatırlamazsan
-o oturumlar kaybolur.
+If you keep 8-10 Claude sessions open across different folders — some untouched for weeks —
+a power cut, a blue screen or a Windows Update restart takes all of them at once. To get them
+back you have to remember which folders you were working in. If you can't, those sessions are
+gone.
 
-Bu sistem kapanış anında neyin açık olduğunu kaydeder ve açılışta tek tuşla hepsini
-**kaldıkları yerden** geri getirir.
+This system records what was open at the moment of shutdown and brings it all back
+**where you left off**, with one keypress.
 
-## Kurulum
+## Install
 
 ```powershell
-git clone https://github.com/<kullanici>/claude-oturum-kurtarma.git
-cd claude-oturum-kurtarma
-powershell -ExecutionPolicy Bypass -File .\Kurulum.ps1
+git clone https://github.com/<user>/claude-session-recovery.git
+cd claude-session-recovery
+powershell -ExecutionPolicy Bypass -File .\Install.ps1
 ```
 
-Kurulum dört şey yapar: script'leri `~\.claude\oturum-kurtarma\` altına kopyalar, PowerShell
-profiline komutları ekler, açılış kısayolu oluşturur ve 10 dakikada bir çalışan bir
-zamanlanmış görev kurar. Yönetici yetkisi gerekmez. Tekrar çalıştırmak zararsızdır.
+It does four things: copies the scripts to `~\.claude\session-recovery\`, adds the commands to
+your PowerShell profile, creates a startup shortcut, and registers a scheduled task that runs
+every 10 minutes. No administrator rights needed. Running it again is harmless.
 
-## Komutlar
+## Commands
 
-| Komut | Ne yapar |
+| Command | What it does |
 |---|---|
-| `cc` | Bulunduğun klasörde Claude'u başlatır, varsa son konuşmayı sürdürür |
-| `cc-tab "<yol>"` | Başka bir klasörü aynı Windows Terminal penceresinde yeni sekmede açar |
-| `cc-geri` | Kapanmış oturumları listeler, seçtiklerini geri açar |
-| `cc-saglik` | Sistemin hâlâ çalışıp çalışmadığını satır satır kontrol eder |
+| `cc` | Starts Claude in the current folder, resuming the last conversation if there is one |
+| `cc-tab "<path>"` | Opens another folder as a new tab in the same Windows Terminal window |
+| `cc-back` | Lists closed sessions and reopens the ones you pick |
+| `cc-health` | Checks, line by line, that the system still works |
 
-Windows açılışında geri yükleme ekranı **otomatik** gelir; aday yoksa hiç görünmez.
+At Windows startup the restore screen appears **automatically**; if there are no candidates it
+never shows up at all.
 
 ```
-  CLAUDE OTURUM GERI YUKLEME
-  Bilgisayar 22.09.2026 12:14 itibariyla acildi. Kapanis aninda acik olan oturumlar:
+  CLAUDE SESSION RECOVERY
+  Booted 22.09.2026 12:14. Sessions open at shutdown:
 
-   [x]  1. Oilman Vigor Mukayese
-          3 dk once  |  acik kalmis  |  kaldigi yerden
+   [x]  1. Oilman Vigor Comparison
+          3 min ago  |  left open  |  resume
    [x]  2. Drill Pipe
-          3 dk once  |  ANI KESINTI  |  kaldigi yerden
+          3 min ago  |  HARD CRASH  |  resume
 
-  [Enter] isaretlileri ac   [1 3 5] isareti degistir   [h] hepsi  [y] hicbiri  [q] vazgec
+  [Enter] open selected   [1 3 5] toggle   [a] all  [n] none  [q] quit
 ```
 
-`Enter` → hepsi tek pencerede sekme sekme açılır, her biri `claude --resume <id>` ile
-tam kaldığı yerden.
+`Enter` → they all open as tabs in one window, each with `claude --resume <id>`, exactly where
+you left it.
 
-## Nasıl çalışıyor
+## How it works
 
-Dört bağımsız kanıt kaynağı birleştirilir; biri kaçırırsa diğeri yakalar:
+Four independent sources of evidence are merged; if one misses, another catches it:
 
-| # | Kaynak | Ne zaman işe yarar |
+| # | Source | When it earns its keep |
 |---|---|---|
-| 0 | Anlık görüntü (10 dk'da bir) | Düzgün restart — Claude kendi kaydını sildiğinde tek iz budur |
-| 1 | Claude'un oturum defteri | Ani kesinti, mavi ekran — temizlik çalışmadığı için kayıt kalır |
-| 2 | Heartbeat kayıtları (15 sn) | `cc` ile açılanlar; kapanışın türünü ayırt eder |
-| 3 | Transcript dosyaları | İlk üçü temizlenmişse son çare |
+| 0 | Snapshot (every 10 min) | Clean restart — claude deletes its own record, so this is the only trace |
+| 1 | Claude's session registry | Power loss, blue screen — no cleanup ran, so the record survives |
+| 2 | Heartbeat records (15 s) | Sessions started with `cc`; tells apart the kind of shutdown |
+| 3 | Transcript files | Last resort, if the first three were cleaned up |
 
-**Zaman penceresi sadece 3. kaynağa uygulanır.** "Kapanışta açık mıydı" bir canlılık
-sorusudur, "ne zaman yazıldı" sorusu değil — bir haftadır dokunulmamış ama açık duran bir
-oturum da geri gelmelidir. Açık olan oturumlar listeye hiç girmez, yani aynı oturum iki kez
-açılmaz; canlılık `pid` + süreç başlangıç zamanı ile doğrulanır.
+**The time window applies to source 3 only.** "Was it open at shutdown" is a liveness question,
+not a recency question — a session untouched for a week but still open must come back too.
+Sessions that are currently open never enter the list, so nothing is ever opened twice;
+liveness is confirmed with `pid` + process start time.
 
-## Sağlık kontrolü
+## Health check
 
-Sistem Claude Code'un **belgelenmemiş** iç dosyalarını okuyor. Bir Claude Code sürümü bu
-dosyaların biçimini değiştirirse hiçbir şey hata vermez — kaynak katmanları sessizce boş
-döner ve bunu ancak bir oturum kaybedince fark edersin. `cc-saglik` o sessiz körelmeyi
-görünür yapar:
+The system reads Claude Code's **undocumented** internal files. If a release changes their
+shape, nothing raises an error — the source layers quietly come back empty and you only notice
+once you have lost a session. `cc-health` makes that silent decay visible:
 
 ```
-[ OK ] 1. katman (oturum defteri) - 7 kayit
-       Alanlar yerinde: cwd, sessionId, pid, procStart
-[HATA] 3. katman - transcript'te 'cwd' yok
-       Bicim degismis. Son care katmani klasor yolunu cikaramaz.
+[ OK ] layer 1 (session registry) - 7 record(s)
+       Fields present: cwd, sessionId, pid, procStart
+[FAIL] layer 3 - no 'cwd' in the transcript
+       The format changed. The last-resort layer cannot recover folder paths.
 ```
 
-Dört katmanın her birini, zamanlanmış görevi, açılış kısayolunu ve profil komutlarını
-ayrı ayrı denetler; sorun bulursa düzeltme komutunu yazar. Claude Code yükselttikten
-sonra bir kere çalıştırmak iyi bir alışkanlık.
+It checks each of the four layers, the scheduled task, the startup shortcut and the profile
+commands separately, and prints the fix for anything it finds. Worth running once after every
+Claude Code upgrade.
 
-## Kaldırma
+## Uninstall
 
 ```powershell
-.\Kaldir.ps1              # script'ler, görev, kısayol ve profil tanımları
-.\Kaldir.ps1 -DurumuSil   # kayıtları ve logu da sil
+.\Uninstall.ps1              # scripts, task, shortcut and profile commands
+.\Uninstall.ps1 -RemoveState # also delete the state records and the log
 ```
 
-Ne sileceğini önce listeler, onay ister. **`~\.claude\projects\` klasörüne — yani
-konuşma geçmişine — asla dokunmaz.**
+It lists what it is about to remove and asks first. **It never touches `~\.claude\projects\` —
+your conversation history.**
 
-## Gereksinimler
+## Requirements
 
-- Windows 10/11, PowerShell 5.1 veya 7
-- [Claude Code](https://claude.com/claude-code) CLI (`claude.exe` PATH'te)
-- Windows Terminal (`wt`) — yoksa oturumlar ayrı pencerelerde açılır
+- Windows 10/11, PowerShell 5.1 or 7
+- [Claude Code](https://claude.com/claude-code) CLI (`claude.exe` on PATH)
+- Windows Terminal (`wt`) — without it, each session opens in its own window
 
-Claude Code'un iç dosya biçimleri **2.1.278** sürümünde doğrulandı. Daha yeni bir sürümde
-çalışıp çalışmadığını `cc-saglik` söyler.
+Claude Code's internal file formats were verified on release **2.1.278**. Whether they still
+hold on a newer release is exactly what `cc-health` tells you.
 
-## Ayrıntılar
+## Details
 
-Mimari, bilinen sınırlar, teşhis komutları ve geliştirirken düşülen tuzaklar
-[`OKUBENI.md`](OKUBENI.md) dosyasında.
+Architecture, known limits, diagnostic commands and the traps hit while building this are in
+[`TECHNICAL.md`](TECHNICAL.md).
 
-`_v1_yedek/` klasöründe bu sistemin ilk sürümü duruyor.
+`_v1_backup/` holds the first version of this system.
 
-## Lisans
+## License
 
 [MIT](LICENSE)

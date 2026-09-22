@@ -1,0 +1,165 @@
+# Uninstall.ps1 - Reverses everything Install.ps1 set up.
+#
+#   powershell -ExecutionPolicy Bypass -File .\Uninstall.ps1
+#   .\Uninstall.ps1 -RemoveState   also deletes the state records and the log
+#   .\Uninstall.ps1 -Yes           runs without asking
+#
+# NEVER TOUCHED:
+#   ~\.claude\projects\   -> your entire conversation history. That folder belongs to claude.
+#   ~\.claude\sessions\   -> claude's own live session registry.
+# This script only removes what it installed; it lists every file it deletes one by one and
+# never uses a bulk or recursive delete.
+
+[CmdletBinding()]
+param(
+    [switch]$RemoveState,
+    [switch]$Yes
+)
+
+$target    = Join-Path $HOME '.claude\session-recovery'
+$state     = Join-Path $target 'state'
+$task      = 'Claude Session Snapshot'
+# GetFolderPath can return an empty string when the shell folders are redirected; Join-Path
+# would then throw, so every use of it is guarded.
+$startup   = [Environment]::GetFolderPath('Startup')
+$lnk       = $(if ($startup) { Join-Path $startup 'Claude Session Restore.lnk' } else { $null })
+$blockHead = '# >>> ClaudeSessionRecovery >>>'
+$blockTail = '# <<< ClaudeSessionRecovery <<<'
+
+$scripts = 'Start.ps1', 'Restore.ps1', 'Snapshot.ps1', 'NewTab.ps1', 'Health.ps1'
+
+$documents = [Environment]::GetFolderPath('MyDocuments')
+$profiles  = @(
+    $PROFILE
+    if ($documents) {
+        Join-Path $documents 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1'
+        Join-Path $documents 'PowerShell\Microsoft.PowerShell_profile.ps1'
+    }
+) | Where-Object { $_ } | Select-Object -Unique |
+    Where-Object { (Test-Path -LiteralPath $_) -and
+                   ([IO.File]::ReadAllText($_, [Text.Encoding]::UTF8) -match [regex]::Escape($blockHead)) }
+
+# ----------------------------------------------------- show WHAT WILL GO first
+Write-Host ""
+Write-Host "  TO BE REMOVED" -ForegroundColor Cyan
+Write-Host ""
+
+$present = @(Get-ChildItem -LiteralPath $target -File -ErrorAction SilentlyContinue |
+             Where-Object { $scripts -contains $_.Name })
+foreach ($f in $present) { Write-Host "   script     $($f.FullName)" }
+
+if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+    Write-Host "   task       $task"
+}
+if ($lnk -and (Test-Path -LiteralPath $lnk)) { Write-Host "   shortcut   $lnk" }
+foreach ($p in $profiles)        { Write-Host "   profile    $p  (ClaudeSessionRecovery block)" }
+
+$stateFiles = @()
+if (Test-Path -LiteralPath $state) {
+    $stateFiles = @(Get-ChildItem -LiteralPath $state -File -ErrorAction SilentlyContinue)
+}
+$log = Join-Path $target 'restore.log'
+if ($RemoveState) {
+    if ($stateFiles.Count -gt 0) { Write-Host "   state      $state  ($($stateFiles.Count) files)" }
+    if (Test-Path -LiteralPath $log) { Write-Host "   log        $log" }
+} else {
+    Write-Host ""
+    Write-Host "   KEPT: $state  ($($stateFiles.Count) files) and the log." -ForegroundColor DarkGray
+    Write-Host "   To remove those too: .\Uninstall.ps1 -RemoveState" -ForegroundColor DarkGray
+}
+
+Write-Host ""
+Write-Host "   NOT TOUCHED: ~\.claude\projects\ (conversation history), ~\.claude\sessions\" -ForegroundColor DarkGray
+Write-Host ""
+
+if ($present.Count -eq 0 -and $profiles.Count -eq 0 -and -not ($lnk -and (Test-Path -LiteralPath $lnk)) -and
+    -not (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue)) {
+    Write-Host "  Nothing to remove - the system is not installed." -ForegroundColor Yellow
+    Write-Host ""
+    return
+}
+
+if (-not $Yes) {
+    $answer = Read-Host "  Continue? (y/N)"
+    if ($answer -notin 'y', 'Y', 'yes', 'e', 'E') {
+        Write-Host "  Cancelled. Nothing changed." -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+}
+Write-Host ""
+
+# ------------------------------------------------------------------ 1. task
+if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+    if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+        $null = schtasks.exe /Delete /TN $task /F 2>&1
+    }
+    if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+        Write-Host "[1/4] Task COULD NOT BE REMOVED: $task" -ForegroundColor Red
+    } else {
+        Write-Host "[1/4] Scheduled task removed." -ForegroundColor Green
+    }
+} else {
+    Write-Host "[1/4] No scheduled task to remove." -ForegroundColor DarkGray
+}
+
+# -------------------------------------------------------------- 2. shortcut
+if ($lnk -and (Test-Path -LiteralPath $lnk)) {
+    Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue
+    Write-Host "[2/4] Startup shortcut removed." -ForegroundColor Green
+} else {
+    Write-Host "[2/4] No startup shortcut to remove." -ForegroundColor DarkGray
+}
+
+# --------------------------------------------------------------- 3. profile
+foreach ($p in $profiles) {
+    Copy-Item -LiteralPath $p -Destination "$p.sessionrecovery-backup" -Force
+    # Same read/write rule as Install.ps1: explicit UTF-8. A BOM-less profile read with 5.1's
+    # ANSI default and written back would have its non-ASCII characters corrupted permanently.
+    $content = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8)
+    $content = [regex]::Replace($content,
+        "(?s)\r?\n?$([regex]::Escape($blockHead)).*?$([regex]::Escape($blockTail))", '')
+    [IO.File]::WriteAllText($p, ($content.TrimEnd() + "`r`n"), (New-Object Text.UTF8Encoding($true)))
+    Write-Host "      profile cleaned: $p" -ForegroundColor DarkGray
+    Write-Host "      backup: $p.sessionrecovery-backup" -ForegroundColor DarkGray
+}
+if ($profiles.Count -gt 0) {
+    Write-Host "[3/4] Commands removed from the profile." -ForegroundColor Green
+} else {
+    Write-Host "[3/4] No commands found in any profile." -ForegroundColor DarkGray
+}
+
+# ----------------------------------------------------------------- 4. files
+$removed = 0
+foreach ($f in $present) {
+    Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $f.FullName)) { $removed++ }
+}
+
+if ($RemoveState) {
+    foreach ($f in $stateFiles) {
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $f.FullName)) { $removed++ }
+    }
+    if (Test-Path -LiteralPath $log) {
+        Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $log)) { $removed++ }
+    }
+    # Remove the folders once empty - if anything else is left inside, leave them alone
+    foreach ($dir in $state, $target) {
+        if ((Test-Path -LiteralPath $dir) -and
+            -not @(Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue).Count) {
+            Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+Write-Host "[4/4] $removed file(s) removed." -ForegroundColor Green
+
+Write-Host ""
+Write-Host "  Uninstalled. Open PowerShell windows keep the 'cc' definitions in memory;" -ForegroundColor Cyan
+Write-Host "  open a new window for them to disappear." -ForegroundColor Cyan
+if (-not $RemoveState -and (Test-Path -LiteralPath $state)) {
+    Write-Host "  Records kept at: $state" -ForegroundColor DarkGray
+}
+Write-Host ""

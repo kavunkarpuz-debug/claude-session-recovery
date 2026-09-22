@@ -1,8 +1,8 @@
-# Calisma zamani durumu - makineye ozel, repoya girmez
-durum/
+# Runtime state - machine specific, never committed
+state/
 *.log
 
-# Gizli bilgi (global kural)
+# Secrets
 *.env
 .env*
 *credentials*
@@ -10,7 +10,7 @@ durum/
 *-key*
 .claude/settings.local.json
 
-# Windows / OneDrive artiklari
+# Windows / cloud-sync leftovers
 Thumbs.db
 desktop.ini
-*.claudeoturum-yedek
+*.sessionrecovery-backup
