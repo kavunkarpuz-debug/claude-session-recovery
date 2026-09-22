@@ -88,7 +88,7 @@ to hundreds of megabytes.
 |---|---|---|
 | `~\.claude\projects\` | **All conversation history** | ⛔ Conversations are gone for good. No way back. |
 | `~\.claude\sessions\` | Claude's live session registry | Claude recreates it; only the current recovery information is lost |
-| `~\.claude\session-recovery\` | The working system (5 scripts + `state\` + log) | `Install.ps1` puts it back in five seconds |
+| `~\.claude\session-recovery\` | The working system (5 scripts + `RunHidden.vbs` + `state\` + log) | `Install.ps1` puts it back in five seconds |
 | `~\.claude\session-recovery\state\snapshot.json` | Last snapshot of open sessions | Refreshes itself within 10 minutes |
 | your clone of this repo | Source copy + `Install.ps1` + these docs | The system keeps running, but you cannot reinstall it |
 | Startup`\Claude Session Restore.lnk` | The shortcut that runs at boot | No automatic screen; `cc-back` still works. Install puts it back |
@@ -125,6 +125,27 @@ Task Scheduler rejects `-RepetitionDuration [TimeSpan]::MaxValue` (`P99999999DT2
 Omitting the duration means "repeat indefinitely". `Register-ScheduledTask` can also emit a
 non-terminating error that never reaches `catch`, so registration is **verified** with
 `Get-ScheduledTask` before success is reported.
+
+## Why the snapshot task goes through a VBScript
+
+A scheduled task that runs `powershell.exe` directly creates a console host in your interactive
+session, and Windows shows it for a fraction of a second on every run. At a 10-minute interval
+that is a black box blinking on your screen all day — alarming if you do not know what it is.
+`-WindowStyle Hidden` does not help: the host is created before the script gets a chance to
+hide anything.
+
+There are two fixes. Registering the task with an S4U principal (*run whether the user is
+logged on or not*, no stored password) puts it in a non-interactive session — but registering
+that principal needs administrator rights, and fails with `Access is denied` for a normal
+account. So `Install.ps1` uses the other one: it generates `RunHidden.vbs` next to the scripts
+and points the task at `wscript.exe`. `wscript` is a GUI-subsystem program with no console of
+its own, and it starts PowerShell with window style `0`, i.e. already hidden. Nothing is ever
+drawn.
+
+The generated file has the full command embedded, with its inner quotes doubled for VBScript.
+If Windows Script Host is disabled by policy, `Install.ps1` detects the missing `wscript.exe`,
+registers the plain PowerShell action instead and says on screen that the flash is coming.
+`Uninstall.ps1` removes `RunHidden.vbs` along with the scripts.
 
 ## The smoke test
 

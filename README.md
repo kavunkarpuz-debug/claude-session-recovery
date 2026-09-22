@@ -74,6 +74,13 @@ Four independent sources of evidence are merged; if one misses, another catches 
 | 2 | Heartbeat records (15 s) | Sessions started with `cc`; tells apart the kind of shutdown |
 | 3 | Transcript files | Last resort, if the first three were cleaned up |
 
+Source 0 is a scheduled task. It is launched through `wscript.exe` so that **nothing appears on
+screen**: Task Scheduler starting `powershell.exe` directly flashes a console window for a
+fraction of a second on every run — every 10 minutes, all day — and `-WindowStyle Hidden` does
+not prevent it, because the console host exists before the script can hide anything. If Windows
+Script Host is disabled on your machine the installer falls back to launching PowerShell
+directly and tells you to expect the flash.
+
 **The time window applies to source 3 only.** "Was it open at shutdown" is a liveness question,
 not a recency question — a session untouched for a week but still open must come back too.
 Sessions that are currently open never enter the list, so nothing is ever opened twice;
