@@ -62,8 +62,23 @@ Hangi oturumun açılacağı **önceden** seçilir, `claude` **tek sefer** çağ
 - `/exit` ile kapattığın bir klasör, 3. kaynak (transcript) üzerinden pencere içindeyse yine
   listede belirebilir. İşaretini kaldırıp geçersin.
 - **Anlık görüntü görevi çalışmıyorsa** uzun süredir sessiz duran oturumlar düzgün restart'ta
-  kaçabilir. Kontrol: `Get-ScheduledTask 'Claude Oturum Anlik Goruntu'`.
-  Kaldırmak için: `Unregister-ScheduledTask 'Claude Oturum Anlik Goruntu'`.
+  kaçabilir. Kontrol: `cc-saglik` (ya da `Get-ScheduledTask 'Claude Oturum Anlik Goruntu'`).
+- **Claude Code sürümü yükseldiğinde** iç dosya biçimleri değişebilir; kod kademeli bozulur
+  (her katman `Test-Path` korumalı) ama körelme sessizdir. Bkz. aşağıdaki başlık.
+
+## Sürüm bağımlılığı ve sağlık kontrolü
+
+Bu sistemin dayandığı iki şey Claude Code tarafından **belgelenmemiştir**: oturum defteri
+kaydının alanları (`~\.claude\sessions\<pid>.json` içindeki `cwd`, `sessionId`, `pid`,
+`procStart`) ve transcript satırlarındaki `cwd`. Biçimleri **2.1.278** sürümünde doğrulandı.
+
+Bir sürüm bunları değiştirirse hiçbir hata çıkmaz — ilgili katman boş döner, sistem sessizce
+zayıflar. `Saglik.ps1` bunu görünür yapmak için var: sürümü karşılaştırmakla yetinmez, gerçek
+dosyaları okuyup **alanların hâlâ orada olduğunu** doğrular. Sürümün farklı olması tek başına
+uyarıdır; asıl karar yapı kontrollerinden çıkar.
+
+Transcript taraması ilk `cwd`'yi ararken dosyanın başındaki `mode` / `permission-mode` gibi
+meta satırları atlar ve en fazla 200 satır okur — dosyalar yüzlerce MB olabiliyor.
 
 ## Dosyalar nerede — ve silinirse ne olur
 
@@ -71,7 +86,7 @@ Hangi oturumun açılacağı **önceden** seçilir, `claude` **tek sefer** çağ
 |---|---|---|
 | `~\.claude\projects\` | **Tüm konuşma geçmişi** (272 MB, 72 klasör) | ⛔ Konuşmalar kalıcı gider. Geri dönüşü yok. |
 | `~\.claude\sessions\` | Claude'un canlı oturum defteri | Claude kendi yeniden üretir; sadece o anki kurtarma bilgisi kaybolur |
-| `~\.claude\oturum-kurtarma\` | Çalışan sistem (3 script + `durum\` + log) | `Kurulum.ps1` ile 5 saniyede geri kurulur |
+| `~\.claude\oturum-kurtarma\` | Çalışan sistem (5 script + `durum\` + log) | `Kurulum.ps1` ile 5 saniyede geri kurulur |
 | `~\.claude\oturum-kurtarma\durum\anlik.json` | Açık oturumların son görüntüsü | 10 dk içinde kendini yeniler |
 | Masaüstü`\claude oturum1\` | Kaynak kopya + `Kurulum.ps1` + bu dosya | Sistem çalışmaya devam eder, ama yeniden kuramazsın |
 | Startup`\Claude Oturum Geri Yukle.lnk` | Açılışta çalışan kısayol | Otomatik ekran gelmez; `cc-geri` çalışır. Kurulum geri koyar |
@@ -99,6 +114,9 @@ kendi fonksiyon adlarını alias'lara karşı tarıyor ve çakışan alias'ı o 
 ## Teşhis
 
 ```powershell
+# Dört katman, görev, kısayol ve profil komutları çalışıyor mu
+cc-saglik
+
 # Neyin aday olduğunu hiçbir şey açmadan/silmeden gör
 & "$HOME\.claude\oturum-kurtarma\GeriYukle.ps1" -Mod Listele -Saat 24
 & "$HOME\.claude\oturum-kurtarma\GeriYukle.ps1" -Mod Listele -Saat 12 -OncekiAcilis   # açılış filtresiyle

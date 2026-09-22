@@ -10,7 +10,7 @@ $hedef  = Join-Path $HOME '.claude\oturum-kurtarma'
 New-Item -ItemType Directory -Force -Path $hedef, (Join-Path $hedef 'durum') | Out-Null
 
 # 1. Scriptleri yerine koy, internetten indirilme isaretini kaldir
-foreach ($f in 'baslat.ps1', 'GeriYukle.ps1', 'Anlik.ps1', 'YeniTab.ps1') {
+foreach ($f in 'baslat.ps1', 'GeriYukle.ps1', 'Anlik.ps1', 'YeniTab.ps1', 'Saglik.ps1') {
     Copy-Item -LiteralPath (Join-Path $kaynak $f) -Destination $hedef -Force
     Unblock-File -LiteralPath (Join-Path $hedef $f)
 }
@@ -24,6 +24,7 @@ $bas
 function cc      { & "$hedef\baslat.ps1" @args }
 function cc-geri { & "$hedef\GeriYukle.ps1" -Mod Manuel @args }
 function cc-tab  { & "$hedef\YeniTab.ps1" @args }
+function cc-saglik { & "$hedef\Saglik.ps1" @args }
 $son
 "@
 
@@ -136,3 +137,6 @@ Write-Host "Bitti. Yeni bir PowerShell penceresi ac." -ForegroundColor Cyan
 Write-Host "  cc        -> bulundugun klasorde Claude'u kayitli baslat" -ForegroundColor Cyan
 Write-Host "  cc-geri   -> kaybolan oturumlari istedigin an listele ve geri ac" -ForegroundColor Cyan
 Write-Host "  cc-tab    -> baska bir klasoru AYNI pencerede yeni sekme olarak ac" -ForegroundColor Cyan
+Write-Host "  cc-saglik -> sistem hala calisiyor mu, kontrol et" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Kaldirmak icin: .\Kaldir.ps1" -ForegroundColor DarkGray

@@ -32,6 +32,7 @@ zamanlanmış görev kurar. Yönetici yetkisi gerekmez. Tekrar çalıştırmak z
 | `cc` | Bulunduğun klasörde Claude'u başlatır, varsa son konuşmayı sürdürür |
 | `cc-tab "<yol>"` | Başka bir klasörü aynı Windows Terminal penceresinde yeni sekmede açar |
 | `cc-geri` | Kapanmış oturumları listeler, seçtiklerini geri açar |
+| `cc-saglik` | Sistemin hâlâ çalışıp çalışmadığını satır satır kontrol eder |
 
 Windows açılışında geri yükleme ekranı **otomatik** gelir; aday yoksa hiç görünmez.
 
@@ -66,11 +67,42 @@ sorusudur, "ne zaman yazıldı" sorusu değil — bir haftadır dokunulmamış a
 oturum da geri gelmelidir. Açık olan oturumlar listeye hiç girmez, yani aynı oturum iki kez
 açılmaz; canlılık `pid` + süreç başlangıç zamanı ile doğrulanır.
 
+## Sağlık kontrolü
+
+Sistem Claude Code'un **belgelenmemiş** iç dosyalarını okuyor. Bir Claude Code sürümü bu
+dosyaların biçimini değiştirirse hiçbir şey hata vermez — kaynak katmanları sessizce boş
+döner ve bunu ancak bir oturum kaybedince fark edersin. `cc-saglik` o sessiz körelmeyi
+görünür yapar:
+
+```
+[ OK ] 1. katman (oturum defteri) - 7 kayit
+       Alanlar yerinde: cwd, sessionId, pid, procStart
+[HATA] 3. katman - transcript'te 'cwd' yok
+       Bicim degismis. Son care katmani klasor yolunu cikaramaz.
+```
+
+Dört katmanın her birini, zamanlanmış görevi, açılış kısayolunu ve profil komutlarını
+ayrı ayrı denetler; sorun bulursa düzeltme komutunu yazar. Claude Code yükselttikten
+sonra bir kere çalıştırmak iyi bir alışkanlık.
+
+## Kaldırma
+
+```powershell
+.\Kaldir.ps1              # script'ler, görev, kısayol ve profil tanımları
+.\Kaldir.ps1 -DurumuSil   # kayıtları ve logu da sil
+```
+
+Ne sileceğini önce listeler, onay ister. **`~\.claude\projects\` klasörüne — yani
+konuşma geçmişine — asla dokunmaz.**
+
 ## Gereksinimler
 
 - Windows 10/11, PowerShell 5.1 veya 7
 - [Claude Code](https://claude.com/claude-code) CLI (`claude.exe` PATH'te)
 - Windows Terminal (`wt`) — yoksa oturumlar ayrı pencerelerde açılır
+
+Claude Code'un iç dosya biçimleri **2.1.278** sürümünde doğrulandı. Daha yeni bir sürümde
+çalışıp çalışmadığını `cc-saglik` söyler.
 
 ## Ayrıntılar
 
@@ -78,3 +110,7 @@ Mimari, bilinen sınırlar, teşhis komutları ve geliştirirken düşülen tuza
 [`OKUBENI.md`](OKUBENI.md) dosyasında.
 
 `_v1_yedek/` klasöründe bu sistemin ilk sürümü duruyor.
+
+## Lisans
+
+[MIT](LICENSE)
