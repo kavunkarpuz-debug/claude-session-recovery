@@ -14,7 +14,7 @@ param()
 
 # The Claude Code release the internals were last verified against. A different version is not
 # a problem in itself; if the STRUCTURE checks below pass, the system works.
-$VerifiedVersion = '2.1.278'
+$VerifiedVersion = '2.1.280'
 
 # Snapshot format this build understands; Snapshot.ps1 stamps what it writes.
 $KnownSnapshotSchema = 1

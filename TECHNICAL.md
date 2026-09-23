@@ -71,7 +71,7 @@ Two rules are deliberate:
 
 Two things this system relies on are **undocumented** by Claude Code: the fields of a session
 registry record (`cwd`, `sessionId`, `pid`, `procStart` in `~\.claude\sessions\<pid>.json`) and
-the `cwd` carried on transcript lines. Their shape was verified on release **2.1.278**.
+the `cwd` carried on transcript lines. Their shape was verified on release **2.1.280**.
 
 If a release changes them nothing errors out — the layer simply returns empty and the system
 quietly weakens. `Health.ps1` exists to make that visible: it does not stop at comparing version

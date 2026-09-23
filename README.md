@@ -119,7 +119,7 @@ your conversation history.**
 - [Claude Code](https://claude.com/claude-code) CLI (`claude.exe` on PATH)
 - Windows Terminal (`wt`) — without it, each session opens in its own window
 
-Claude Code's internal file formats were verified on release **2.1.278**. Whether they still
+Claude Code's internal file formats were verified on release **2.1.280**. Whether they still
 hold on a newer release is exactly what `cc-health` tells you.
 
 ## Tests
